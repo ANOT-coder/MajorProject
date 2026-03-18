@@ -5,7 +5,9 @@ import "./Translate.css";
 
 export default function Translate() {
   const [text, setText]         = useState("");
-  const [keypoints, setKeypoints] = useState(null);
+  const [frames, setFrames]     = useState([]);   // ← was: keypoints
+  const [fps, setFps]           = useState(25);
+  const [glosses, setGlosses]   = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
 
@@ -13,10 +15,16 @@ export default function Translate() {
     if (!text.trim()) return;
     setLoading(true);
     setError(null);
-    setKeypoints(null);
+    setFrames([]);
+    setGlosses([]);
     try {
       const data = await translateText(text);
-      setKeypoints(data);
+      // data.frames   → [{joints: {nose:{x,y,z}, ...}}, ...]
+      // data.fps      → 25
+      // data.glosses  → ["HELLO", "HOW", "YOU"]
+      setFrames(data.frames);
+      setFps(data.fps);
+      setGlosses(data.glosses);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -56,9 +64,21 @@ export default function Translate() {
             </div>
           </div>
 
-          <div className="translate-tip">
+          {/* Gloss chips — shown after a successful translation */}
+          {glosses.length > 0 && (
+            <div className="translate-gloss">
+              <span className="translate-gloss__label">ASL gloss:</span>
+              <div className="translate-gloss__chips">
+                {glosses.map((g, i) => (
+                  <span key={i} className="translate-gloss__chip">{g}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* <div className="translate-tip">
             💡 Tip: Keep sentences short for best results. The model works best with simple, clear phrases.
-          </div>
+          </div> */}
         </div>
 
         {/* Output panel */}
@@ -74,13 +94,13 @@ export default function Translate() {
               <p className="translate-error">⚠️ {error}</p>
             </div>
           )}
-          {!loading && !error && keypoints && (
+          {!loading && !error && frames.length > 0 && (
             <div style={{ textAlign: "center" }}>
-              <SkeletonViewer keypoints={keypoints} />
+              <SkeletonViewer frames={frames} fps={fps} autoPlay={true} />
               <p className="translate-animating">Animating: "{text}"</p>
             </div>
           )}
-          {!loading && !error && !keypoints && (
+          {!loading && !error && frames.length === 0 && (
             <div className="translate-placeholder">
               <span className="placeholder-icon">🤲</span>
               <p>Your animation will appear here</p>

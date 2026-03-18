@@ -1,29 +1,80 @@
 .skeleton-viewer {
-  width: 100%;
-  height: 400px;         /* adjust to your layout */
-  border-radius: 20px;
-  overflow: hidden;
-  position: relative;
-  background: #1a1523;
-}
-
-/* Three.js drops a <canvas> inside — make it fill the div */
-.skeleton-viewer canvas {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* Shown only when no keypoints are passed in yet */
-.skeleton-placeholder {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: rgba(255, 251, 244, 0.4);
+  gap: 10px;
+  width: 100%;
 }
-.skeleton-placeholder span { font-size: 3rem; }
-.skeleton-placeholder p    { font-size: 0.9rem; }
+
+/* Three.js mounts its <canvas> inside this div */
+.skeleton-viewer__canvas {
+  width: 400px;
+  height: 500px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+.skeleton-viewer__canvas:active { cursor: grabbing; }
+
+.skeleton-viewer--empty {
+  width: 400px;
+  height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed #243040;
+  border-radius: 12px;
+  color: #536778;
+  font-size: 0.875rem;
+}
+
+.skeleton-viewer__hint {
+  font-size: 0.7rem;
+  color: #536778;
+  letter-spacing: 0.03em;
+}
+
+/* ── Controls ── */
+.skeleton-viewer__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 400px;
+}
+
+.sv-btn {
+  background: #161e27;
+  border: 1.5px solid #2e3e50;
+  border-radius: 8px;
+  color: #e8edf2;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 6px 10px;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.sv-btn:hover { background: #1c2733; border-color: #00d4ff; }
+
+.sv-btn--primary {
+  background: #00d4ff;
+  border-color: #00d4ff;
+  color: #000;
+  min-width: 40px;
+}
+.sv-btn--primary:hover { background: #33ddff; }
+
+.sv-scrubber {
+  flex: 1;
+  accent-color: #00d4ff;
+  cursor: pointer;
+}
+
+.sv-counter {
+  font-size: 0.75rem;
+  color: #536778;
+  font-family: monospace;
+  white-space: nowrap;
+  min-width: 64px;
+  text-align: right;
+}

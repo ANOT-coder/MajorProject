@@ -25,7 +25,7 @@ export default function Navbar() {
         ))}
       </div>
 
-      <Link to="/translate" className="nav-cta">Try it free →</Link>
+      {/* <Link to="/translate" className="nav-cta">Try it free →</Link> */}
     </nav>
   );
 }

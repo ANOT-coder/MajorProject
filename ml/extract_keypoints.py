@@ -393,7 +393,7 @@ def create_unified_dataset_json(all_json_paths, output_file='unified_dataset.jso
 # Example usage and visualization functions
 if __name__ == "__main__":
     # Set your dataset path
-    dataset_path = "dataset2"  # Folder containing videos
+    dataset_path = "dataset1"  # Folder containing videos
     
     if not os.path.exists(dataset_path):
         print(f"❌ Dataset path '{dataset_path}' does not exist!")
@@ -406,7 +406,7 @@ if __name__ == "__main__":
         # Process all videos to individual JSON files
         json_paths, summary_df = process_all_videos_to_json(
             dataset_path, 
-            output_dir='video_keypoints_json_output2'
+            output_dir='video_keypoints_json_output1'
         )
         
         # Example: Load and analyze a specific video's JSON

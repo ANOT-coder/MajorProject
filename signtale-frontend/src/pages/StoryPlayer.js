@@ -10,16 +10,27 @@ export default function StoryPlayer() {
   const navigate = useNavigate();
   const story = stories.find((s) => s.id === Number(id));
 
-  const [keypoints, setKeypoints] = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
+  const [frames, setFrames]   = useState([]);   // ← was: keypoints
+  const [fps, setFps]         = useState(25);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
 
   useEffect(() => {
     if (!story) return;
     setLoading(true);
+    setFrames([]);
     getStoryKeypoints(id)
-      .then((data) => { setKeypoints(data); setLoading(false); })
-      .catch((err) => { setError(err.message); setLoading(false); });
+      .then((data) => {
+        // data.frames → [{joints: {nose:{x,y,z}, ...}}, ...]
+        // data.fps    → 25
+        setFrames(data.frames);
+        setFps(data.fps);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
   }, [id, story]);
 
   if (!story) return (
@@ -58,7 +69,8 @@ export default function StoryPlayer() {
           </div>
         )}
         {!loading && !error && (
-          <SkeletonViewer keypoints={keypoints} />
+          // frames + fps wired directly into SkeletonViewer
+          <SkeletonViewer frames={frames} fps={fps} autoPlay={true} />
         )}
       </div>
     </main>

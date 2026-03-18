@@ -13,7 +13,7 @@ export default function Home() {
       <section className="hero">
         <div className="hero-text">
           <div className="hero-badge">
-            <span className="badge-dot" />✨ AI-Powered Sign Language
+            <span className="badge-dot" />Story Telling for the Hearing Impaired
           </div>
           <h1 className="hero-title">
             Stories that<br />
@@ -48,10 +48,10 @@ export default function Home() {
       {/* ── Stats bar ── */}
       <div className="stats-bar">
         {[
-          { num: "20+",   label: "ASL Stories" },
-          { num: "3D",    label: "Skeleton Animation" },
-          { num: "1K+",   label: "Signs Modeled" },
-          { num: "100%",  label: "Accessible" },
+          { num: "AI", label: "Story Translation" },
+          { num: "3D", label: "Character Animation" },
+          { num: "NLP", label: "ASL Gloss Conversion" },
+          { num: "Web", label: "Interactive Interface" },
         ].map(({ num, label }) => (
           <div key={label} className="stat">
             <div className="stat-num">{num}</div>
@@ -108,9 +108,9 @@ export default function Home() {
         <h2 className="section-title">How it works</h2>
         <div className="how-grid">
           {[
-            { num: "1", icon: "📝", bg: "#FFF0A0", title: "You provide input",       desc: "Type any text or pick a story from our growing library." },
-            { num: "2", icon: "🧠", bg: "#D8CCFF", title: "ML generates keypoints",  desc: "Our FastAPI backend runs the model and produces 3D joint data." },
-            { num: "3", icon: "🎬", bg: "#B8F0D8", title: "Skeleton comes alive",    desc: "Three.js renders a fluid, expressive ASL animation in your browser." },
+            { num: "1", icon: "📝", bg: "#FFF0A0", title: "You provide input", desc: "Type any text or pick a story from our growing library." },
+            { num: "2", icon: "🧠", bg: "#D8CCFF", title: "ML generates keypoints", desc: "Our FastAPI backend runs the model and produces 3D joint data." },
+            { num: "3", icon: "🎬", bg: "#B8F0D8", title: "Skeleton comes alive", desc: "Three.js renders a fluid, expressive ASL animation in your browser." },
           ].map((step) => (
             <div key={step.num} className="how-step">
               <span className="step-num">{step.num}</span>
