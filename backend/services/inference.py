@@ -50,9 +50,13 @@ ATTN_DIM    = 256
 PAD_GLOSS   = 0
 
 # ── Inference constants (from training notebook) ──────────────────────────────
-MAX_T_OUT     = 120    # same cap used in training's generate()
-STOP_THRESH   = 0.5    # same default as training's generate(stop_thresh=0.5)
-MIN_FRAMES    = 5      # training enforces t >= 5 before allowing stop
+MAX_T_OUT          = 300    
+STOP_THRESH        = 0.55   
+STOP_MIN_STEPS     = 12    
+STOP_CONSEC_FRAMES = 5      # NEW — was missing entirely
+STATIC_TAIL_EPS    = 0.0025 # NEW — was missing entirely
+STATIC_TAIL_PATIENCE = 8    # same default as training's generate(stop_thresh=0.5)
+
 
 # ── Joint names ───────────────────────────────────────────────────────────────
 # Order matches preprocess_to_npz_v3.py:
@@ -183,23 +187,19 @@ try:
             return enc_out, enc_mask, h0, c0
 
         @torch.no_grad()
-        def generate(self, gloss, gloss_lens, max_T=MAX_T_OUT, stop_thresh=STOP_THRESH):
-            """
-            Autoregressive inference — exact copy of training notebook generate().
-            Stops when sigmoid(stop_proj) > stop_thresh for ALL sequences AND t >= 5.
-            """
+        def generate(self, gloss, gloss_lens, max_T=MAX_T_OUT, stop_thresh=STOP_THRESH,
+                    stop_min_steps=STOP_MIN_STEPS, stop_consec_frames=STOP_CONSEC_FRAMES):
             self.eval()
             B = gloss.size(0)
-
             enc_out, enc_mask, h0, c0 = self.encode(gloss, gloss_lens)
             dec_layers = self.decoder.num_layers
             h = h0.unsqueeze(0).repeat(dec_layers, 1, 1).contiguous()
             c = c0.unsqueeze(0).repeat(dec_layers, 1, 1).contiguous()
-
             prev = enc_out.new_zeros((B, self.out_proj.out_features))
 
-            preds       = []
-            stop_probs  = []
+            preds, stop_probs = [], []
+            stop_counter  = torch.zeros(B, dtype=torch.long, device=enc_out.device)
+            static_counter= torch.zeros(B, dtype=torch.long, device=enc_out.device)
 
             for t in range(max_T):
                 if self.use_attention:
@@ -213,16 +213,32 @@ try:
                 x_pred = self.out_proj(step_h)
                 preds.append(x_pred)
 
+                # static-tail detector
+                if t > 0:
+                    frame_motion = torch.mean(torch.abs(x_pred - prev), dim=1)
+                    static_counter = torch.where(
+                        frame_motion < STATIC_TAIL_EPS,
+                        static_counter + 1,
+                        torch.zeros_like(static_counter)
+                    )
+
                 if self.use_stop_head:
                     sp = torch.sigmoid(self.stop_proj(step_h)).squeeze(-1)
                     stop_probs.append(sp)
-                    # minimum MIN_FRAMES frames before stop is allowed
-                    if (sp > stop_thresh).all() and t >= MIN_FRAMES:
-                        break
+                    stop_counter = torch.where(
+                        sp > stop_thresh,
+                        stop_counter + 1,
+                        torch.zeros_like(stop_counter)
+                    )
+                    if t >= stop_min_steps:
+                        if (stop_counter >= stop_consec_frames).all():
+                            break
+                        if (static_counter >= STATIC_TAIL_PATIENCE).all():
+                            break
 
                 prev = x_pred
 
-            X = torch.stack(preds, dim=1)   # (B, T, D)
+            X = torch.stack(preds, dim=1)
             S = torch.stack(stop_probs, dim=1) if self.use_stop_head else None
             return X, S
 
@@ -321,7 +337,7 @@ _MOCK_BODY = {
 }
 
 def _mock_frames(num_glosses: int) -> list[dict]:
-    n = max(MIN_FRAMES + 1, min(MAX_T_OUT, num_glosses * 20))
+    n = max(STOP_MIN_STEPS + 1, min(MAX_T_OUT, num_glosses * 20))
     frames = []
     for fi in range(n):
         t = fi / n
@@ -380,6 +396,155 @@ def run_inference(gloss_ids: list[int]) -> list[dict]:
     )
     return frames
 
+def _interpolate_joints(joints_a: dict, joints_b: dict, t: float) -> dict:
+    """
+    Pure linear interpolation between two joint dicts.
+    t=0.0 → joints_a,  t=1.0 → joints_b
+    """
+    result = {}
+    for name in joints_a:
+        if name in joints_b:
+            a, b = joints_a[name], joints_b[name]
+            result[name] = {
+                "x": round(a["x"] + (b["x"] - a["x"]) * t, 4),
+                "y": round(a["y"] + (b["y"] - a["y"]) * t, 4),
+                "z": round(a["z"] + (b["z"] - a["z"]) * t, 4),
+            }
+        else:
+            result[name] = joints_a[name]
+    return result
+
+
+def _ease_in_out(t: float) -> float:
+    """
+    Smoothstep — accelerates out of the first pose, decelerates into the next.
+    Feels much more natural than linear for body motion.
+    """
+    return t * t * (3.0 - 2.0 * t)
+
+
+# ── Replace _smooth_concatenate entirely ─────────────────────────────────────
+
+# ── Replace _trim_static_tail with this ──────────────────────────────────────
+
+def _trim_tail(frames: list[dict], trim: int = 10, min_keep: int = 10) -> list[dict]:
+    """
+    Always remove the last `trim` frames from a word's frame list.
+    Never trims below `min_keep` frames regardless.
+    """
+    keep = max(min_keep, len(frames) - trim)
+    return frames[:keep]
+
+
+def _smooth_concatenate(
+    segments: list[list[dict]],
+    transition_frames: int = 8,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Concatenates per-word frame lists with smooth interpolated transitions
+    inserted between words.
+
+    Each word's static tail is trimmed first so signs don't appear
+    cut-off — the trim removes only the frozen hold frames the model
+    appends after the sign is complete, not the sign itself.
+    """
+    if not segments:
+        return [], []
+
+    all_frames:    list[dict] = []
+    word_segments: list[dict] = []
+
+    for i, seg_frames in enumerate(segments):
+        if not seg_frames:
+            continue
+
+        # Trim static tail from every word except the very last
+        # (keep the last word's tail so the animation ends cleanly)
+        if i < len(segments) - 1:
+            seg_frames = _trim_tail(seg_frames, trim=10, min_keep=10)
+
+        start = len(all_frames)
+
+        if i == 0:
+            all_frames.extend(seg_frames)
+        else:
+            # Insert eased transition frames between the two words
+            last_frame  = all_frames[-1]["joints"]
+            first_frame = seg_frames[0]["joints"]
+
+            for step in range(transition_frames):
+                t_raw = (step + 1) / (transition_frames + 1)   # never 0 or 1
+                t     = _ease_in_out(t_raw)
+                all_frames.append({
+                    "joints": _interpolate_joints(last_frame, first_frame, t)
+                })
+
+            start = len(all_frames)   # word starts AFTER transition
+            all_frames.extend(seg_frames)
+
+        end = len(all_frames) - 1
+        word_segments.append({"start_frame": start, "end_frame": end})
+
+    return all_frames, word_segments
+# Add this at the bottom of inference.py, after run_inference()
+
+def run_inference_per_word(
+    words_and_ids: list[tuple[str, int]],
+    transition_frames: int = 8,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Word-level inference: runs the model once per word, then smoothly
+    concatenates with interpolated transition frames between words.
+
+    Args:
+        words_and_ids:     [(gloss_word, gloss_id), ...]
+        transition_frames: frames to insert between words (default 8 = 320ms at 25fps)
+
+    Returns:
+        (frames, word_segments)
+    """
+    if not words_and_ids:
+        return [], []
+
+    model = _load_model()
+
+    # ── Step 1: run inference for every word independently ───────────────────
+    per_word_frames: list[list[dict]] = []
+    gloss_words: list[str] = []
+
+    for gloss, gloss_id in words_and_ids:
+        if model is None:
+            word_frames = _mock_frames(1)
+        else:
+            import torch
+            src      = torch.tensor([[gloss_id]], dtype=torch.long)
+            src_lens = torch.tensor([1],          dtype=torch.long)
+            X, _ = model.generate(src, src_lens, max_T=MAX_T_OUT, stop_thresh=STOP_THRESH)
+            word_frames = _tensor_to_frames(X)
+
+        per_word_frames.append(word_frames)
+        gloss_words.append(gloss)
+        logger.info(f"  [{gloss}] id={gloss_id} → {len(word_frames)} frames")
+
+    # ── Step 2: smooth concatenation with inserted transition frames ─────────
+    all_frames, raw_segments = _smooth_concatenate(per_word_frames, transition_frames)
+
+    # ── Step 3: attach word names to segments ────────────────────────────────
+    word_segments = [
+        {
+            "word":        gloss_words[i],
+            "start_frame": raw_segments[i]["start_frame"],
+            "end_frame":   raw_segments[i]["end_frame"],
+        }
+        for i in range(len(gloss_words))
+    ]
+
+    logger.info(
+        f"run_inference_per_word: {len(words_and_ids)} words → "
+        f"{len(all_frames)} frames "
+        f"({len(words_and_ids)-1} transitions × {transition_frames} frames each)"
+    )
+    return all_frames, word_segments
 
 def model_is_loaded() -> bool:
     return _load_model() is not None

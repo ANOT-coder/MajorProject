@@ -5,15 +5,14 @@ POST /api/translate
   Body:  { "text": "Hello, how are you?" }
   Response: TranslationResponse (see schema below)
 """
-
 import time
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from services.preprocessor import text_to_gloss
-from services.vocab        import glosses_to_ids, get_vocab_size
-from services.inference    import run_inference, model_is_loaded
+from services.vocab        import glosses_to_word_id_pairs, get_vocab_size  
+from services.inference    import run_inference_per_word, model_is_loaded    
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["translate"])
@@ -37,6 +36,10 @@ class JointPosition(BaseModel):
 class KeypointFrame(BaseModel):
     joints: dict[str, JointPosition]
 
+class WordSegment(BaseModel):
+    word:        str
+    start_frame: int
+    end_frame:   int
 
 class TranslationResponse(BaseModel):
     original_text:  str
@@ -44,11 +47,12 @@ class TranslationResponse(BaseModel):
     gloss_ids:      list[int]
     oov_glosses:    list[str]
     frames:         list[KeypointFrame]
+    word_segments:  list[WordSegment]    # ← new
     frame_count:    int
     fps:            int
     duration_ms:    float
     processing_ms:  float
-    model_loaded:   bool   # False = mock inference was used
+    model_loaded:   bool
 
 
 # ---------------------------------------------------------------------------
@@ -82,20 +86,21 @@ async def translate(req: TranslateRequest):
                    "Try a longer or more specific sentence."
         )
 
-    # ── Step 2: Gloss → IDs ─────────────────────────────────────────────────
-    gloss_ids, oov = glosses_to_ids(glosses, skip_unknown=False)
-    logger.info(f"[translate] ids: {gloss_ids}, oov: {oov}")
+    # ── Step 2: Gloss → (word, id) pairs ────────────────────────────────────
+    pairs, oov = glosses_to_word_id_pairs(glosses)
+    gloss_ids  = [gid for _, gid in pairs]
+    logger.info(f"[translate] pairs: {pairs}, oov: {oov}")
 
-    if not gloss_ids:
+    if not pairs:
         raise HTTPException(
             status_code=422,
             detail=f"None of the gloss words were found in the vocabulary. "
                    f"OOV words: {oov}"
         )
 
-    # ── Step 3: IDs → Keypoint Frames ───────────────────────────────────────
-    raw_frames = run_inference(gloss_ids)
-    logger.info(f"[translate] generated {len(raw_frames)} frames")
+    # ── Step 3: Per-word inference → concatenated frames ────────────────────
+    raw_frames, word_segments = run_inference_per_word(pairs)
+    logger.info(f"[translate] generated {len(raw_frames)} frames across {len(pairs)} words")
 
     # ── Step 4: Assemble response ────────────────────────────────────────────
     fps = 25
@@ -108,12 +113,14 @@ async def translate(req: TranslateRequest):
         gloss_ids=gloss_ids,
         oov_glosses=oov,
         frames=raw_frames,
+        word_segments=word_segments,    # ← new
         frame_count=len(raw_frames),
         fps=fps,
         duration_ms=round(duration_ms, 1),
         processing_ms=round(processing_ms, 1),
         model_loaded=model_is_loaded(),
     )
+
 
 
 # ---------------------------------------------------------------------------

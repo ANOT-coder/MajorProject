@@ -102,3 +102,32 @@ def glosses_to_ids(
         logger.debug(f"OOV glosses: {oov}")
 
     return ids, oov
+
+# Add after glosses_to_ids()
+
+def glosses_to_word_id_pairs(
+    glosses: list[str],
+) -> tuple[list[tuple[str, int]], list[str]]:
+    """
+    Like glosses_to_ids() but returns (word, id) pairs instead of just ids.
+    OOV words are skipped (never passed to the model).
+
+    Returns:
+        (pairs, oov_list)
+        pairs    — [(gloss_word, gloss_id), ...] for known words only
+        oov_list — words that were not found in vocab
+    """
+    vocab = _load_vocab()
+    pairs: list[tuple[str, int]] = []
+    oov:   list[str]             = []
+
+    for gloss in glosses:
+        if gloss in vocab:
+            pairs.append((gloss, vocab[gloss]))
+        else:
+            oov.append(gloss)
+
+    if oov:
+        logger.debug(f"OOV glosses (skipped): {oov}")
+
+    return pairs, oov
