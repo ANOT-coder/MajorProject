@@ -101,16 +101,8 @@ The system produces **smooth, temporally consistent animations** suitable for st
 - Prasanna Shakya  
 - Prinska Maharjan  
 - Sajal Maharjan  
-- Ashok GM  
 
 Affiliation: Himalaya College of Engineering, Tribhuvan University, Nepal  
-
----
-
-## 📜 Citation
-If you use this project in your research, please cite:
-
-> Amatya, B., Shakya, P., Maharjan, P., Maharjan, S., & GM, A. (2026). *SignTales: Storytelling for Hearing Impaired Children Using LSTM-based Temporal Model*. Journal of Himalaya College of Engineering, Vol. 3, Issue 1.
 
 ---
 
